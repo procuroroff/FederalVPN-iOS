@@ -1,0 +1,55 @@
+name: FederalVPN
+options:
+  bundleIdPrefix: com.federalvpn
+  deploymentTarget:
+    iOS: "15.0"
+  xcodeVersion: "15.0"
+  developmentLanguage: ru
+
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    SWIFT_VERSION: "5.9"
+    ENABLE_BITCODE: "NO"
+    TARGETED_DEVICE_FAMILY: "1,2" # iPhone, iPad
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+targets:
+  FederalVPN:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: App
+      - path: Core
+      - path: UI
+      - path: Shared
+    dependencies:
+      - target: PacketTunnelExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.federalvpn.app
+        CODE_SIGN_ENTITLEMENTS: FederalVPN.entitlements
+        INFOPLIST_FILE: App/Info.plist
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/Frameworks"
+
+  PacketTunnelExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: PacketTunnelExtension
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.federalvpn.app.PacketTunnelExtension
+        CODE_SIGN_ENTITLEMENTS: PacketTunnelExtension/PacketTunnelExtension.entitlements
+        INFOPLIST_FILE: PacketTunnelExtension/Info.plist
+        WRAPPER_EXTENSION: appex
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/Frameworks"
+          - "@executable_path/../../Frameworks"
