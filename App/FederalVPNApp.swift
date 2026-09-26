@@ -11,12 +11,7 @@ struct FederalVPNApp: App {
         // Предзагрузка серверов из кэша или пресетов
         if ServerRepository.shared.servers.isEmpty {
             Task {
-                let mockRepo = MockConfigurationRepository()
-                if let (servers, configs) = try? await mockRepo.loadConfiguration(from: "") {
-                    await MainActor.run {
-                        ServerRepository.shared.refreshServers(from: "")
-                    }
-                }
+                await ServerRepository.shared.refreshServers(from: "")
             }
         }
     }
