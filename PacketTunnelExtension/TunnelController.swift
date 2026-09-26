@@ -15,8 +15,6 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     
     public init(provider: NEPacketTunnelProvider) {
         self.provider = provider
-        LibboxPrepareCrashSignalHandlers()
-        LibboxReinstallCrashSignalHandlers()
         super.init()
     }
     
@@ -36,10 +34,6 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
         options.workingPath = working.path
         options.tempPath = temp.path
         options.logMaxLines = 3000
-        options.debug = false
-        options.crashReportSource = "NetworkExtension"
-        options.appVersion = "1.0.0"
-        options.appMarketingVersion = "1.0.0"
         
         var setupError: NSError?
         LibboxSetup(options, &setupError)
@@ -52,8 +46,6 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
         AppLogger.shared.info("[TunnelController] LibboxSetup ok")
         Self.appendTrollStoreLog("TunnelController: LibboxSetup ok")
         
-        LibboxPromoteOOMDraft()
-        LibboxDiscardPowerReportDraft()
         LibboxSetMemoryLimit(true)
         
         var cmdError: NSError?
@@ -138,13 +130,8 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
         
         if options.getAutoRoute() {
             var dnsServers: [String] = []
-            if let dnsIterator = try? options.getDNSServerAddress() {
-                while dnsIterator.hasNext() {
-                    let s = dnsIterator.next()
-                    if !s.isEmpty {
-                        dnsServers.append(s)
-                    }
-                }
+            if let dnsBox = try? options.getDNSServerAddress(), !dnsBox.value.isEmpty {
+                dnsServers = [dnsBox.value]
             }
             if dnsServers.isEmpty {
                 dnsServers = ["1.1.1.1", "8.8.8.8"]
@@ -290,30 +277,11 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     }
     
     private func report(_ path: Network.NWPath, to listener: any LibboxInterfaceUpdateListenerProtocol) {
-        let desc = describeNetworkPath(path)
-        listener.updateNetworkPath(desc)
         guard path.status != .unsatisfied, let iface = path.availableInterfaces.first else {
             listener.updateDefaultInterface("", interfaceIndex: -1, isExpensive: false, isConstrained: false)
             return
         }
         listener.updateDefaultInterface(iface.name, interfaceIndex: Int32(iface.index), isExpensive: path.isExpensive, isConstrained: path.isConstrained)
-    }
-    
-    private func describeNetworkPath(_ path: Network.NWPath) -> String {
-        var comps: [String] = []
-        switch path.status {
-        case .satisfied: comps.append("satisfied")
-        case .unsatisfied: comps.append("unsatisfied")
-        case .requiresConnection: comps.append("requiresConnection")
-        @unknown default: comps.append("unknown")
-        }
-        if !path.availableInterfaces.isEmpty {
-            comps.append("interfaces=" + path.availableInterfaces.map { "\($0.name)#\($0.index)" }.joined(separator: ","))
-        }
-        if path.supportsIPv4 { comps.append("ipv4") }
-        if path.supportsIPv6 { comps.append("ipv6") }
-        if path.supportsDNS { comps.append("dns") }
-        return comps.joined(separator: " ")
     }
     
     public func closeDefaultInterfaceMonitor(_ listener: (any LibboxInterfaceUpdateListenerProtocol)?) throws {
