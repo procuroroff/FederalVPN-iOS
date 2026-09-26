@@ -1,25 +1,40 @@
 import Foundation
 
-/// Профиль пользователя в системе (соответствует Android UserProfile)
+/// Профиль пользователя в системе (полное соответствие Android UserProfile)
 public struct UserProfile: Codable, Equatable {
     public let username: String
     public let accountStatus: String
     public let daysLeft: Int
     public let expireAt: String?
     public let subscriptionEndpoint: String?
+    public let telegramLinked: Bool
+    public let tgUsername: String?
+    public let trafficLimitBytes: Int64
+    public let trafficUsedBytes: Int64
+    public let happLink: String?
     
     public init(
         username: String,
         accountStatus: String,
         daysLeft: Int,
         expireAt: String? = nil,
-        subscriptionEndpoint: String? = nil
+        subscriptionEndpoint: String? = nil,
+        telegramLinked: Bool = false,
+        tgUsername: String? = nil,
+        trafficLimitBytes: Int64 = 0,
+        trafficUsedBytes: Int64 = 0,
+        happLink: String? = nil
     ) {
         self.username = username
         self.accountStatus = accountStatus
         self.daysLeft = daysLeft
         self.expireAt = expireAt
         self.subscriptionEndpoint = subscriptionEndpoint
+        self.telegramLinked = telegramLinked
+        self.tgUsername = tgUsername
+        self.trafficLimitBytes = trafficLimitBytes
+        self.trafficUsedBytes = trafficUsedBytes
+        self.happLink = happLink
     }
 
     /// Совместимость с кодом настроек
@@ -40,7 +55,10 @@ public struct UserProfile: Codable, Equatable {
         if isInfinite {
             return "БЕССРОЧНО"
         }
-        return "\(daysLeft) дн."
+        if daysLeft >= 0 {
+            return "\(daysLeft)"
+        }
+        return "—"
     }
 
     public var formattedExpiryDate: String {
@@ -51,5 +69,17 @@ public struct UserProfile: Codable, Equatable {
             return "Действует до \(expire.prefix(10))"
         }
         return "Активна"
+    }
+    
+    public var formattedTraffic: String {
+        let usedGb = Double(trafficUsedBytes) / (1024.0 * 1024.0 * 1024.0)
+        let usedStr = String(format: "%.2f", usedGb)
+        if trafficLimitBytes > 0 {
+            let limitGb = Double(trafficLimitBytes) / (1024.0 * 1024.0 * 1024.0)
+            let limitStr = String(format: "%.1f", limitGb)
+            return "\(usedStr) / \(limitStr) ГБ"
+        } else {
+            return "\(usedStr) ГБ (Безлимит)"
+        }
     }
 }

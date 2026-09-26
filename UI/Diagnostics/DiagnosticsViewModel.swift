@@ -56,7 +56,11 @@ public final class DiagnosticsViewModel: ObservableObject {
     }
     
     public func refreshLogs() {
-        logs = AppLogger.shared.exportLogs()
+        var allLogs = AppLogger.shared.exportLogs()
+        if let extLog = SharedDefaults.shared.lastTunnelLog {
+            allLogs += "\n[Extension] " + extLog
+        }
+        logs = allLogs
         tunnelStatus = (vpnManager.status == .connected) ? "Active (TUN0)" : "Inactive"
         coreStatus = (vpnManager.status == .connected) ? "Running" : "Stopped"
     }

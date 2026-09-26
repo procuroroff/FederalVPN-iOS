@@ -181,7 +181,13 @@ public final class VPNManager: ObservableObject {
                 
             case .disconnected:
                 self.connectTimeoutWorkItem?.cancel()
-                self.status = .disconnected
+                if let extErr = SharedDefaults.shared.lastTunnelError {
+                    self.lastError = extErr
+                    self.status = .error
+                    AppLogger.shared.error("[VPNManager] Extension reported error: \(extErr)")
+                } else {
+                    self.status = .disconnected
+                }
                 self.stopDurationTimer()
                 AppLogger.shared.info("[VPNManager] Status changed: DISCONNECTED")
                 

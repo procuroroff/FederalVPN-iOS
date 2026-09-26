@@ -26,6 +26,18 @@ public final class SharedDefaults {
         static let activeProfile = "com.federalvpn.activeProfile"
         static let cachedServers = "com.federalvpn.cachedServers"
         static let lastActiveConfig = "com.federalvpn.lastActiveConfig"
+        static let lastTunnelError = "com.federalvpn.lastTunnelError"
+        static let lastTunnelLog = "com.federalvpn.lastTunnelLog"
+    }
+    
+    public var lastTunnelError: String? {
+        get { defaults.string(forKey: Keys.lastTunnelError) }
+        set { defaults.set(newValue, forKey: Keys.lastTunnelError) }
+    }
+    
+    public var lastTunnelLog: String? {
+        get { defaults.string(forKey: Keys.lastTunnelLog) }
+        set { defaults.set(newValue, forKey: Keys.lastTunnelLog) }
     }
     
     public var selectedServerId: String? {
