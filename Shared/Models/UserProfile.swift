@@ -22,6 +22,11 @@ public struct UserProfile: Codable, Equatable {
         self.subscriptionEndpoint = subscriptionEndpoint
     }
 
+    /// Совместимость с кодом настроек
+    public var configurationEndpoint: String? {
+        return subscriptionEndpoint
+    }
+
     /// Проверка на бессрочную подписку (больше 1000 дней или -1)
     public var isInfinite: Bool {
         return daysLeft > 1000 || daysLeft == -1

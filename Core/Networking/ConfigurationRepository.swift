@@ -1,6 +1,12 @@
 import Foundation
 import UIKit
 
+/// Протокол репозитория конфигураций
+public protocol ConfigurationRepositoryProtocol {
+    func loadConfiguration(from urlString: String) async throws -> (servers: [Server], configs: [String: ConnectionConfig])
+    func getLastWorkingConfig() -> ConnectionConfig?
+}
+
 /// Репозиторий загрузки и разбора конфигураций VLESS REALITY
 public final class ConfigurationRepository: ConfigurationRepositoryProtocol {
     public static let shared = ConfigurationRepository()
@@ -33,7 +39,7 @@ public final class ConfigurationRepository: ConfigurationRepositoryProtocol {
         request.httpMethod = "GET"
         request.setValue("v2rayNG", forHTTPHeaderField: "User-Agent")
         
-        let hwid = UIDevice.current.identifierForVendor?.uuidString.replacingOccurrences(of: "-", with "").lowercased() ?? "iosdevicehwid"
+        let hwid = UIDevice.current.identifierForVendor?.uuidString.replacingOccurrences(of: "-", with: "").lowercased() ?? "iosdevicehwid"
         request.setValue(hwid, forHTTPHeaderField: "x-hwid")
         
         do {
@@ -157,7 +163,7 @@ public final class ConfigurationRepository: ConfigurationRepositoryProtocol {
     private func extractMetadata(from raw: String) -> (flag: String, name: String, country: String) {
         var flag = "🌐"
         var country = "Общий"
-        var name = raw
+        let name = raw
         
         if raw.contains("Израиль") || raw.contains("IL") {
             flag = "🇮🇱"; country = "Израиль"
