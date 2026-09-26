@@ -30,6 +30,15 @@ jobs:
         run: |
           brew install xcodegen ldid
 
+      - name: Download and Unpack Libbox.xcframework
+        run: |
+          mkdir -p Frameworks
+          echo "Downloading Libbox.xcframework from sing-box build..."
+          curl -sL "https://github.com/folexz/libbox-build/releases/download/v1.13.7/Libbox.xcframework.zip" -o Frameworks/Libbox.xcframework.zip
+          unzip -q Frameworks/Libbox.xcframework.zip -d Frameworks/
+          rm -f Frameworks/Libbox.xcframework.zip
+          ls -la Frameworks/Libbox.xcframework
+
       - name: Generate Xcode Project
         run: xcodegen generate
 

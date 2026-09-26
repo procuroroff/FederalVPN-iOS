@@ -125,5 +125,97 @@ public struct ConnectionConfig: Codable, Equatable {
           ]
         }
         """
+    /// Генерация JSON-конфигурации для передачи в sing-box / Libbox core
+    public func generateSingBoxConfigJSON() -> String {
+        let server = serverAddress.isEmpty ? "sw1.pornsite.fun" : serverAddress
+        let port = serverPort > 0 ? serverPort : 443
+        let uuid = userId.isEmpty ? "7ad08a3b-53bb-4902-a0a3-6b6c4f42d019" : userId
+        let sni = serverName.isEmpty ? "www.nvidia.com" : serverName
+        let pbk = publicKey.isEmpty ? "PIJ9YOUeKXNf-CY_y69wBMASbmEHyFHoc6AK_jOF2nw" : publicKey
+        let flowStr = flow.isEmpty ? "xtls-rprx-vision" : flow
+        let fp = fingerprint.isEmpty ? "chrome" : fingerprint
+        
+        return """
+        {
+          "log": {
+            "level": "warn",
+            "timestamp": true
+          },
+          "dns": {
+            "servers": [
+              {
+                "tag": "remote-dns",
+                "address": "tcp://1.1.1.1",
+                "detour": "proxy"
+              },
+              {
+                "tag": "local-dns",
+                "address": "local",
+                "detour": "direct"
+              }
+            ],
+            "final": "remote-dns",
+            "strategy": "prefer_ipv4"
+          },
+          "inbounds": [
+            {
+              "type": "tun",
+              "tag": "tun-in",
+              "address": ["172.19.0.1/30"],
+              "mtu": 1500,
+              "auto_route": true,
+              "strict_route": true,
+              "stack": "system",
+              "sniff": true
+            }
+          ],
+          "outbounds": [
+            {
+              "type": "vless",
+              "tag": "proxy",
+              "server": "\(server)",
+              "server_port": \(port),
+              "uuid": "\(uuid)",
+              "flow": "\(flowStr)",
+              "network": "tcp",
+              "tls": {
+                "enabled": true,
+                "server_name": "\(sni)",
+                "utls": {
+                  "enabled": true,
+                  "fingerprint": "\(fp)"
+                },
+                "reality": {
+                  "enabled": true,
+                  "public_key": "\(pbk)",
+                  "short_id": "\(shortId)"
+                }
+              }
+            },
+            {
+              "type": "direct",
+              "tag": "direct"
+            },
+            {
+              "type": "dns",
+              "tag": "dns-out"
+            }
+          ],
+          "route": {
+            "rules": [
+              {
+                "protocol": "dns",
+                "outbound": "dns-out"
+              },
+              {
+                "ip_is_private": true,
+                "outbound": "direct"
+              }
+            ],
+            "final": "proxy",
+            "auto_detect_interface": true
+          }
+        }
+        """
     }
 }

@@ -4,6 +4,10 @@ import NetworkExtension
 /// Главный провайдер пакетного туннеля iOS (NEPacketTunnelProvider)
 public final class PacketTunnelProvider: NEPacketTunnelProvider {
     
+    #if canImport(Libbox)
+    private var tunnelController: TunnelController?
+    #endif
+    
     private let coreAdapter = NetworkCoreAdapter.shared
     private var tunnelStartTime: Date?
     private var totalBytesIn: UInt64 = 0
@@ -36,12 +40,29 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
             logExtension("No explicit config provided, using placeholder config")
         }
         
-        // 2. Создание и настройка сетевого интерфейса NEPacketTunnelNetworkSettings
+        #if canImport(Libbox)
+        logExtension("Starting native Sing-box (Libbox) core engine for \(config.serverAddress)...")
+        let controller = TunnelController(provider: self)
+        self.tunnelController = controller
+        Task {
+            do {
+                try await controller.start(with: config)
+                self.isTunnelActive = true
+                self.logExtension(">>> Sing-box Tunnel is LIVE, READY and ROUTING TRAFFIC")
+                completionHandler(nil)
+            } catch {
+                let msg = "Sing-box core startup failed: \(error.localizedDescription)"
+                self.logExtension("ERROR: \(msg)")
+                self.lastErrorMessage = msg
+                SharedDefaults.shared.lastTunnelError = msg
+                completionHandler(error)
+            }
+        }
+        #else
+        // Fallback-режим
         let settings = createNetworkSettings(for: config)
+        logExtension("Applying fallback NEPacketTunnelNetworkSettings...")
         
-        logExtension("Applying NEPacketTunnelNetworkSettings (IPv4, DNS, MTU 1500)...")
-        
-        // 3. Применение настроек к виртуальному сетевому интерфейсу iOS
         setTunnelNetworkSettings(settings) { [weak self] error in
             guard let self = self else { return }
             
@@ -54,14 +75,11 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             
-            self.logExtension("Network settings applied successfully. Starting core engine...")
-            
-            // 4. Запуск сетевого ядра
             self.coreAdapter.start(configuration: config) { [weak self] coreError in
                 guard let self = self else { return }
                 
                 if let coreError = coreError {
-                    let msg = "Core engine startup failed: \(coreError.localizedDescription)"
+                    let msg = "Core startup failed: \(coreError.localizedDescription)"
                     self.logExtension("ERROR: \(msg)")
                     self.lastErrorMessage = msg
                     SharedDefaults.shared.lastTunnelError = msg
@@ -71,14 +89,11 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
                 
                 self.isTunnelActive = true
                 self.logExtension(">>> Tunnel is READY and CONNECTED")
-                
-                // 5. Запуск цикла обработки пакетов
                 self.startPacketForwardingLoop()
-                
-                // 6. Успешный запуск туннеля
                 completionHandler(nil)
             }
         }
+        #endif
     }
     
     public override func stopTunnel(
@@ -87,23 +102,39 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
     ) {
         logExtension("<<< stopTunnel called with reason: \(reason.rawValue)")
         isTunnelActive = false
-        coreAdapter.stop()
         tunnelStartTime = nil
+        
+        #if canImport(Libbox)
+        Task {
+            await self.tunnelController?.stop()
+            self.tunnelController = nil
+            completionHandler()
+        }
+        #else
+        coreAdapter.stop()
         completionHandler()
+        #endif
     }
     
     public override func sleep(completionHandler: @escaping () -> Void) {
         logExtension("Device going to sleep")
+        #if canImport(Libbox)
+        tunnelController?.sleep()
+        #endif
         completionHandler()
     }
     
     public override func wake() {
         logExtension("Device woke up")
+        #if canImport(Libbox)
+        tunnelController?.wake()
+        #else
         if !coreAdapter.isRunning && isTunnelActive {
             if let config = SharedDefaults.shared.getActiveConfig() {
                 coreAdapter.start(configuration: config) { _ in }
             }
         }
+        #endif
     }
     
     // MARK: - Межпроцессное взаимодействие (App IPC)
@@ -122,7 +153,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
         case .getStatus:
             let uptime = tunnelStartTime.map { Int(Date().timeIntervalSince($0)) } ?? 0
             let report = TunnelStatusReport(
-                isCoreRunning: coreAdapter.isRunning,
+                isCoreRunning: isTunnelActive,
                 uptimeSeconds: uptime,
                 bytesIn: totalBytesIn,
                 bytesOut: totalBytesOut,
@@ -138,6 +169,19 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
             
         case .reconnectWithConfig(let newConfig):
             logExtension("Reconnecting with new config: \(newConfig.serverAddress)")
+            #if canImport(Libbox)
+            Task {
+                await self.tunnelController?.stop()
+                do {
+                    try await self.tunnelController?.start(with: newConfig)
+                    let resp = TunnelIPCMessage.Response.success
+                    completionHandler?(try? JSONEncoder().encode(resp))
+                } catch {
+                    let resp = TunnelIPCMessage.Response.error(error.localizedDescription)
+                    completionHandler?(try? JSONEncoder().encode(resp))
+                }
+            }
+            #else
             coreAdapter.stop()
             coreAdapter.start(configuration: newConfig) { [weak self] error in
                 if let error = error {
@@ -150,22 +194,19 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
                     completionHandler?(try? JSONEncoder().encode(resp))
                 }
             }
+            #endif
         }
     }
     
-    // MARK: - Настройка параметров туннеля (NEPacketTunnelNetworkSettings)
+    // MARK: - Настройка параметров туннеля (Fallback)
     
     private func createNetworkSettings(for config: ConnectionConfig) -> NEPacketTunnelNetworkSettings {
-        // Резолвим адрес сервера в IPv4. Если это доменное имя, iOS запрещает передавать его напрямую в tunnelRemoteAddress / NEIPv4Route!
         let resolvedServerIP = resolveHostToIPv4(config.serverAddress)
         let remoteEndpointAddress = resolvedServerIP ?? "172.19.0.1"
         
         logExtension("Server address: '\(config.serverAddress)', resolved endpoint IP: '\(remoteEndpointAddress)'")
         
-        // 1. Создаем настройки с валидным IP-адресом
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remoteEndpointAddress)
-        
-        // 2. IPv4 Settings (Перенаправление трафика в виртуальный интерфейс TUN)
         let tunnelIP = isValidIPv4(config.tunnelIPv4) ? config.tunnelIPv4 : "172.19.0.2"
         let tunnelMask = isValidIPv4(config.tunnelSubnetMask) ? config.tunnelSubnetMask : "255.255.255.0"
         
@@ -175,29 +216,22 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
         )
         ipv4Settings.includedRoutes = [NEIPv4Route.default()]
         
-        // Исключаем только валидный IP-адрес сервера из туннеля, чтобы избежать петли маршрутизации
         var excludedRoutes: [NEIPv4Route] = []
         if let serverIP = resolvedServerIP, isValidIPv4(serverIP) {
             excludedRoutes.append(NEIPv4Route(destinationAddress: serverIP, subnetMask: "255.255.255.255"))
-            logExtension("Excluded direct route to server IP: \(serverIP)")
         }
         ipv4Settings.excludedRoutes = excludedRoutes
         settings.ipv4Settings = ipv4Settings
         
-        // 3. DNS Settings (1.1.1.1, 8.8.8.8)
         let dnsServers = config.dnsServers.filter { isValidIPv4($0) }
         let finalDns = dnsServers.isEmpty ? ["1.1.1.1", "8.8.8.8"] : dnsServers
         let dnsSettings = NEDNSSettings(servers: finalDns)
-        dnsSettings.matchDomains = [""] // Перехватываем все доменные запросы
+        dnsSettings.matchDomains = [""]
         settings.dnsSettings = dnsSettings
         
-        // 4. MTU 1500 (соответствует Android FederalVpnService)
         settings.mtu = NSNumber(value: 1500)
-        
         return settings
     }
-    
-    // MARK: - Вспомогательные методы DNS и IP
     
     private func isValidIPv4(_ address: String) -> Bool {
         var sin = sockaddr_in()
@@ -242,18 +276,14 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
         SharedDefaults.shared.lastTunnelLog = line
     }
     
-    // MARK: - Цикл обработки пакетов
-    
     private func startPacketForwardingLoop() {
         guard isTunnelActive else { return }
         
         packetFlow.readPackets { [weak self] (packets, protocols) in
             guard let self = self, self.isTunnelActive else { return }
-            
             for packet in packets {
                 self.totalBytesOut += UInt64(packet.count)
             }
-            
             self.startPacketForwardingLoop()
         }
     }
