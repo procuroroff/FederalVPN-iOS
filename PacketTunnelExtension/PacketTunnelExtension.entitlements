@@ -2,22 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Network Extension Capability для Packet Tunnel Extension -->
     <key>com.apple.developer.networking.networkextension</key>
     <array>
         <string>packet-tunnel-provider</string>
+        <string>app-proxy-provider</string>
+        <string>content-filter-provider</string>
+        <string>dns-proxy</string>
+        <string>dns-settings</string>
     </array>
     
-    <!-- Тот же App Group контейнер для чтения файлов конфигурации -->
     <key>com.apple.security.application-groups</key>
     <array>
         <string>group.com.federalvpn.app</string>
-    </array>
-    
-    <!-- Доступ к Keychain с тем же Access Group -->
-    <key>keychain-access-groups</key>
-    <array>
-        <string>$(AppIdentifierPrefix)group.com.federalvpn.app</string>
     </array>
 </dict>
 </plist>

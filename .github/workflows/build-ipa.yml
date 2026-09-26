@@ -15,24 +15,23 @@ jobs:
 
       - name: Select Xcode 16
         run: |
-          echo "Available Xcode installations:"
-          ls -d /Applications/Xcode*
-          if [ -d "/Applications/Xcode_16.0.app" ]; then
-            sudo xcode-select -switch /Applications/Xcode_16.0.app
-          elif [ -d "/Applications/Xcode_16.1.app" ]; then
+          if [ -d "/Applications/Xcode_16.1.app" ]; then
             sudo xcode-select -switch /Applications/Xcode_16.1.app
+          elif [ -d "/Applications/Xcode_16.0.app" ]; then
+            sudo xcode-select -switch /Applications/Xcode_16.0.app
           elif [ -d "/Applications/Xcode_16.app" ]; then
             sudo xcode-select -switch /Applications/Xcode_16.app
           fi
           xcodebuild -version
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install Build Tools (XcodeGen & ldid)
+        run: |
+          brew install xcodegen ldid
 
       - name: Generate Xcode Project
         run: xcodegen generate
 
-      - name: Build Archive (Fake-Signed / Ad-Hoc for TrollStore)
+      - name: Build Archive
         run: |
           xcodebuild archive \
             -project FederalVPN.xcodeproj \
@@ -44,12 +43,26 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Package IPA for TrollStore
+      - name: Package & Sign for TrollStore
         run: |
           mkdir -p build/Payload
           cp -r build/FederalVPN.xcarchive/Products/Applications/FederalVPN.app build/Payload/
+          
+          echo "Signing PacketTunnelExtension with entitlements for TrollStore..."
+          if [ -d "build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex" ]; then
+            ldid -SPacketTunnelExtension/PacketTunnelExtension.entitlements build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex/PacketTunnelExtension
+            codesign -s - --force --entitlements PacketTunnelExtension/PacketTunnelExtension.entitlements build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex
+          fi
+          
+          echo "Signing FederalVPN main application with entitlements for TrollStore..."
+          ldid -SFederalVPN.entitlements build/Payload/FederalVPN.app/FederalVPN
+          codesign -s - --force --entitlements FederalVPN.entitlements build/Payload/FederalVPN.app
+          
+          echo "Verifying embedded entitlements:"
+          ldid -e build/Payload/FederalVPN.app/FederalVPN
+          
           cd build
-          zip -r FederalVPN.ipa Payload
+          zip -r -9 FederalVPN.ipa Payload
           cd ..
 
       - name: Upload IPA Artifact
@@ -58,3 +71,9 @@ jobs:
           name: FederalVPN-TrollStore
           path: build/FederalVPN.ipa
           retention-days: 14
+
+      - name: Create or Update GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload v1.0.0 build/FederalVPN.ipa --clobber || gh release create v1.0.0 build/FederalVPN.ipa --title "Federal VPN iOS v1.0.0 (TrollStore)" --notes "Federal VPN iOS client with TrollStore entitlements"

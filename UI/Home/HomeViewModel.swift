@@ -7,9 +7,12 @@ public final class HomeViewModel: ObservableObject {
     @Published public var selectedServer: Server?
     @Published public var formattedDuration: String = "00:00:00"
     @Published public var errorMessage: String?
+    @Published public var userProfile: UserProfile?
+    @Published public var isAuthenticated: Bool = false
     
     private let vpnManager = VPNManager.shared
     private let serverRepo = ServerRepository.shared
+    private let authService = AuthService.shared
     private var cancellables = Set<AnyCancellable>()
     
     public init() {
@@ -41,6 +44,16 @@ public final class HomeViewModel: ObservableObject {
         serverRepo.$selectedServer
             .receive(on: RunLoop.main)
             .assign(to: \.selectedServer, on: self)
+            .store(in: &cancellables)
+            
+        authService.$currentUserProfile
+            .receive(on: RunLoop.main)
+            .assign(to: \.userProfile, on: self)
+            .store(in: &cancellables)
+            
+        authService.$isAuthenticated
+            .receive(on: RunLoop.main)
+            .assign(to: \.isAuthenticated, on: self)
             .store(in: &cancellables)
     }
     

@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-/// Репозиторий управления серверами и логикой автовыбора наилучшего узла
+/// Репозиторий серверов с автоматической предзагрузкой и автовыбором
 public final class ServerRepository: ObservableObject {
     public static let shared = ServerRepository()
     
@@ -10,15 +10,14 @@ public final class ServerRepository: ObservableObject {
     @Published public var selectedServer: Server?
     @Published public private(set) var isRefreshing: Bool = false
     
-    private let configRepo: ConfigurationRepositoryProtocol
+    private let configRepo = ConfigurationRepository.shared
     private let latencyTester = LatencyTester.shared
     
-    public init(configRepo: ConfigurationRepositoryProtocol = ConfigurationRepository.shared) {
-        self.configRepo = configRepo
-        loadCachedServers()
+    public init() {
+        loadInitialServers()
     }
     
-    private func loadCachedServers() {
+    private func loadInitialServers() {
         let cached = SharedDefaults.shared.getCachedServers()
         if !cached.isEmpty {
             self.servers = cached
@@ -28,35 +27,48 @@ public final class ServerRepository: ObservableObject {
             } else {
                 self.selectedServer = cached.first
             }
+        } else {
+            loadDefaultServers()
         }
     }
     
-    /// Обновление списка серверов из подписки
+    public func loadDefaultServers() {
+        let (presetServers, presetConfigs) = configRepo.getDefaultFederalServers()
+        self.servers = presetServers
+        self.configs = presetConfigs
+        self.selectedServer = presetServers.first
+        SharedDefaults.shared.saveCachedServers(presetServers)
+        SharedDefaults.shared.selectedServerId = presetServers.first?.id
+        AppLogger.shared.info("[ServerRepo] Loaded \(presetServers.count) default Federal nodes (default: \(selectedServer?.name ?? ""))")
+    }
+    
     public func refreshServers(from urlString: String) async {
         await MainActor.run { self.isRefreshing = true }
         
         do {
             let (newServers, newConfigs) = try await configRepo.loadConfiguration(from: urlString)
             await MainActor.run {
-                self.servers = newServers
-                self.configs = newConfigs
-                if self.selectedServer == nil || !newServers.contains(where: { $0.id == self.selectedServer?.id }) {
-                    self.selectedServer = newServers.first
+                if !newServers.isEmpty {
+                    self.servers = newServers
+                    self.configs = newConfigs
+                    if self.selectedServer == nil || !newServers.contains(where: { $0.id == self.selectedServer?.id }) {
+                        self.selectedServer = newServers.first
+                        SharedDefaults.shared.selectedServerId = newServers.first?.id
+                    }
                 }
                 self.isRefreshing = false
             }
             
-            // Фоновый замер задержки для актуализации списка
             await pingAllServers()
         } catch {
-            await MainActor.run {
-                self.isRefreshing = false
+            await MainActor.run { self.isRefreshing = false }
+            AppLogger.shared.warning("[ServerRepo] Refresh error: \(error.localizedDescription)")
+            if self.servers.isEmpty {
+                loadDefaultServers()
             }
-            AppLogger.shared.error("[ServerRepo] Refresh error: \(error.localizedDescription)")
         }
     }
     
-    /// Пинг всех серверов в списке
     public func pingAllServers() async {
         for index in servers.indices {
             let server = servers[index]
@@ -73,7 +85,6 @@ public final class ServerRepository: ObservableObject {
         SharedDefaults.shared.saveCachedServers(servers)
     }
     
-    /// Автоматический выбор наилучшего сервера по минимальной задержке и доступности
     public func performAutomaticSelection() async -> Server? {
         AppLogger.shared.info("[ServerRepo] Performing automatic server selection...")
         await pingAllServers()
@@ -92,7 +103,6 @@ public final class ServerRepository: ObservableObject {
             return optimal
         }
         
-        // Fallback к первому доступному, если пинг не удался
         let fallback = servers.first
         if let fallback = fallback {
             await MainActor.run {
@@ -112,11 +122,10 @@ public final class ServerRepository: ObservableObject {
         if let existing = configs[server.id] {
             return existing
         }
-        // Запасная конфигурация по адресу и порту сервера
         return ConnectionConfig(
             serverAddress: server.address,
             serverPort: server.port,
-            userId: KeychainManager.shared.getString(key: .activeUserId) ?? "USER_ID_PLACEHOLDER"
+            userId: KeychainManager.shared.getString(key: .activeUserId) ?? ConfigurationRepository.defaultUserUUID
         )
     }
 }

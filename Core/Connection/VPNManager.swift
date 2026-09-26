@@ -42,7 +42,8 @@ public final class VPNManager: ObservableObject {
             guard let self = self else { return }
             
             if let error = error {
-                AppLogger.shared.error("[VPNManager] Failed to load tunnel managers: \(error.localizedDescription)")
+                AppLogger.shared.warning("[VPNManager] Initial load preferences: \(error.localizedDescription)")
+                self.tunnelManager = NETunnelProviderManager()
                 completion?(false)
                 return
             }
@@ -121,10 +122,8 @@ public final class VPNManager: ObservableObject {
     // MARK: - Подготовка системного профиля VPN
     
     private func ensureTunnelConfigured(for config: ConnectionConfig, completion: @escaping (Bool) -> Void) {
-        guard let manager = tunnelManager else {
-            completion(false)
-            return
-        }
+        let manager = tunnelManager ?? NETunnelProviderManager()
+        self.tunnelManager = manager
         
         let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         proto.providerBundleIdentifier = tunnelExtensionBundleId

@@ -5,47 +5,54 @@ public struct HomeView: View {
     @State private var showServerList = false
     @State private var showSettings = false
     @State private var showDiagnostics = false
+    @State private var showLogin = false
+    @State private var showCabinet = false
     
     public init() {}
     
     public var body: some View {
         ZStack {
-            // Фон приложения
+            // Темный фон
             Color.appBackground
                 .ignoresSafeArea()
             
             // Фоновое фокусное свечение
             VStack {
                 Circle()
-                    .fill(Color.appRed.opacity(viewModel.connectionStatus == .connected ? 0.15 : 0.05))
+                    .fill(Color.appRed.opacity(viewModel.connectionStatus == .connected ? 0.16 : 0.06))
                     .frame(width: 320, height: 320)
-                    .blur(radius: 60)
-                    .offset(y: -40)
+                    .blur(radius: 65)
+                    .offset(y: -50)
                 Spacer()
             }
             .ignoresSafeArea()
             
-            // Основной скроллируемый контент (гарантирует отсутствие обрезки на iPhone 7)
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 22) {
-                    // Верхняя панель (Header)
+                VStack(spacing: 16) {
+                    // 1. Верхний хедер
                     headerSection
-                        .padding(.top, 8)
+                        .padding(.top, 6)
                     
-                    // Статус подключения
+                    // 2. Карточка авторизации / профиля пользователя (как на Android)
+                    if viewModel.isAuthenticated, let profile = viewModel.userProfile {
+                        accountCard(profile)
+                    } else {
+                        guestCard
+                    }
+                    
+                    // 3. Статус подключения
                     StatusBadge(status: viewModel.connectionStatus)
+                        .padding(.top, 4)
                     
-                    Spacer(minLength: 12)
-                    
-                    // Центральная кнопка подключения
+                    // 4. Большая кнопка подключения с анимацией
                     ConnectButton(status: viewModel.connectionStatus) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.easeInOut(duration: 0.25)) {
                             viewModel.toggleConnection()
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     
-                    // Таймер сессии (виден при активном подключении)
+                    // 5. Таймер активной сессии
                     if viewModel.connectionStatus == .connected {
                         Text(viewModel.formattedDuration)
                             .font(.system(size: 22, weight: .bold, design: .monospaced))
@@ -54,21 +61,20 @@ public struct HomeView: View {
                             .transition(.opacity)
                     }
                     
-                    Spacer(minLength: 12)
-                    
-                    // Карточка выбранного сервера
+                    // 6. Карточка выбора сервера
                     serverSelectionCard
                     
-                    // Блок сообщения об ошибке
+                    // 7. Сообщение об ошибке (при наличии)
                     if let err = viewModel.errorMessage, viewModel.connectionStatus == .error {
                         errorBanner(err)
                     }
                     
-                    // Дополнительные кнопки навигации
-                    bottomQuickActions
+                    // 8. Футер протокола
+                    protocolFooter
+                        .padding(.top, 4)
                         .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
             }
         }
         .sheet(isPresented: $showServerList) {
@@ -80,53 +86,186 @@ public struct HomeView: View {
         .sheet(isPresented: $showDiagnostics) {
             DiagnosticsView()
         }
+        .sheet(isPresented: $showLogin) {
+            LoginView()
+        }
+        .sheet(isPresented: $showCabinet) {
+            CabinetView()
+        }
     }
     
-    // MARK: - Subviews
+    // MARK: - Хедер (с фирменной иконкой и кнопками)
     
     private var headerSection: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            // Логотип приложения (из ассетов с fallback на Shield)
+            Group {
+                if let uiImage = UIImage(named: "AppLogo") {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(LinearGradient.appRedGradient)
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "shield.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+            .shadow(color: Color.appRed.opacity(0.3), radius: 6)
+            
+            VStack(alignment: .leading, spacing: 3) {
                 Text("FEDERAL VPN")
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .font(.system(size: 19, weight: .heavy, design: .rounded))
                     .foregroundColor(.white)
-                    .tracking(1.5)
+                    .tracking(1.2)
                 
                 Text("ИНТЕРНЕТ БЕЗ ГРАНИЦ")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundColor(Color.appRed)
-                    .tracking(1.2)
+                    .tracking(1.0)
             }
             
             Spacer()
             
-            HStack(spacing: 12) {
-                Button(action: { showDiagnostics = true }) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 40, height: 40)
+            HStack(spacing: 8) {
+                // Кнопка Кабинета
+                Button(action: {
+                    if viewModel.isAuthenticated {
+                        showCabinet = true
+                    } else {
+                        showLogin = true
+                    }
+                }) {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(viewModel.isAuthenticated ? Color.appRed : Color.white)
+                        .frame(width: 38, height: 38)
                         .background(Color.appSurfaceElevated)
                         .clipShape(Circle())
                 }
                 
+                // Кнопка Логов/Диагностики
+                Button(action: { showDiagnostics = true }) {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color.appTextSecondary)
+                        .frame(width: 38, height: 38)
+                        .background(Color.appSurfaceElevated)
+                        .clipShape(Circle())
+                }
+                
+                // Кнопка Настроек
                 Button(action: { showSettings = true }) {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 40, height: 40)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Color.appTextSecondary)
+                        .frame(width: 38, height: 38)
                         .background(Color.appSurfaceElevated)
                         .clipShape(Circle())
                 }
             }
         }
+        .padding(.vertical, 4)
     }
+    
+    // MARK: - Карточка Гостя (Не авторизован)
+    
+    private var guestCard: some View {
+        GlassCard(cornerRadius: 18, padding: 16, showRedBorder: true) {
+            VStack(spacing: 12) {
+                Text("🔒 ТРЕБУЕТСЯ АВТОРИЗАЦИЯ")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(Color.appRed)
+                    .tracking(1.0)
+                
+                Text("Войдите под своей учётной записью с сайта federal-vpn.site для подключения к серверам")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color.appTextSecondary)
+                    .multilineTextAlignment(.center)
+                
+                Button(action: { showLogin = true }) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(LinearGradient.appRedGradient)
+                            .frame(height: 46)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("ВОЙТИ В ЛИЧНЫЙ КАБИНЕТ")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                        .foregroundColor(.white)
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+    }
+    
+    // MARK: - Карточка Авторизованного профиля
+    
+    private func accountCard(_ profile: UserProfile) -> some View {
+        Button(action: { showCabinet = true }) {
+            GlassCard(cornerRadius: 18, padding: 14) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient.appRedGradient)
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(profile.username)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                            Circle()
+                                .fill(Color.appGreen)
+                                .frame(width: 7, height: 7)
+                        }
+                        
+                        Text(profile.formattedExpiryDate)
+                            .font(.system(size: 12))
+                            .foregroundColor(Color.appTextSecondary)
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(profile.formattedDaysRemaining)
+                            .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                            .foregroundColor(profile.isInfinite ? Color.appYellow : Color.appGreen)
+                        
+                        Text("подписка")
+                            .font(.system(size: 10))
+                            .foregroundColor(Color.appTextMuted)
+                    }
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color.appTextMuted)
+                }
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    // MARK: - Карточка выбора сервера
     
     private var serverSelectionCard: some View {
         Button(action: { showServerList = true }) {
-            GlassCard(cornerRadius: 16, padding: 14) {
+            GlassCard(cornerRadius: 18, padding: 14) {
                 HStack(spacing: 14) {
-                    // Флаг в круглой плашке
                     Text(viewModel.selectedServer?.flag ?? "🌐")
                         .font(.system(size: 26))
                         .frame(width: 46, height: 46)
@@ -146,7 +285,6 @@ public struct HomeView: View {
                     
                     Spacer()
                     
-                    // Пинг / задержка
                     if let ping = viewModel.selectedServer?.latency {
                         HStack(spacing: 4) {
                             Circle()
@@ -181,20 +319,20 @@ public struct HomeView: View {
             Spacer()
         }
         .padding(12)
-        .background(Color.appRedDark.opacity(0.3))
+        .background(Color.appRedDark.opacity(0.35))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.appRed.opacity(0.5), lineWidth: 1)
+                .stroke(Color.appRed.opacity(0.6), lineWidth: 1)
         )
         .cornerRadius(12)
     }
     
-    private var bottomQuickActions: some View {
+    private var protocolFooter: some View {
         HStack {
             Text("VLESS • REALITY • XTLS VISION")
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(Color.appTextMuted)
-                .tracking(1.0)
+                .tracking(1.2)
         }
     }
 }
