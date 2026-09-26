@@ -125,6 +125,8 @@ public struct ConnectionConfig: Codable, Equatable {
           ]
         }
         """
+    }
+
     /// Генерация JSON-конфигурации для передачи в sing-box / Libbox core
     public func generateSingBoxConfigJSON() -> String {
         let server = serverAddress.isEmpty ? "sw1.pornsite.fun" : serverAddress
