@@ -60,6 +60,9 @@ public final class DiagnosticsViewModel: ObservableObject {
         if let extLog = SharedDefaults.shared.lastTunnelLog {
             allLogs += "\n[Extension] " + extLog
         }
+        if let sharedLogs = try? String(contentsOfFile: "/private/var/tmp/federalvpn_tunnel.log", encoding: .utf8), !sharedLogs.isEmpty {
+            allLogs += "\n=== TUNNEL CORE LOGS ===\n" + sharedLogs
+        }
         logs = allLogs
         tunnelStatus = (vpnManager.status == .connected) ? "Active (TUN0)" : "Inactive"
         coreStatus = (vpnManager.status == .connected) ? "Running" : "Stopped"

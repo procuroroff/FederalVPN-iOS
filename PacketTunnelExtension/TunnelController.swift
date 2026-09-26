@@ -15,12 +15,16 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     
     public init(provider: NEPacketTunnelProvider) {
         self.provider = provider
+        LibboxPrepareCrashSignalHandlers()
+        LibboxReinstallCrashSignalHandlers()
         super.init()
     }
     
     // MARK: - Жизненный цикл
     
     public func start(with config: ConnectionConfig) async throws {
+        Self.appendTrollStoreLog("TunnelController: starting core for \(config.serverAddress):\(config.serverPort)")
+        
         let base = Self.workBaseURL()
         let working = base.appendingPathComponent("Working")
         let temp = base.appendingPathComponent("Temp")
@@ -31,32 +35,54 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
         options.basePath = base.path
         options.workingPath = working.path
         options.tempPath = temp.path
-        options.logMaxLines = 1000
+        options.logMaxLines = 3000
+        options.debug = false
+        options.crashReportSource = "NetworkExtension"
+        options.appVersion = "1.0.0"
+        options.appMarketingVersion = "1.0.0"
         
         var setupError: NSError?
         LibboxSetup(options, &setupError)
         if let setupError = setupError {
-            AppLogger.shared.error("[TunnelController] LibboxSetup failed: \(setupError.localizedDescription)")
+            let msg = "LibboxSetup failed: \(setupError.localizedDescription)"
+            AppLogger.shared.error("[TunnelController] \(msg)")
+            Self.recordTrollStoreError(msg)
             throw setupError
         }
         AppLogger.shared.info("[TunnelController] LibboxSetup ok")
+        Self.appendTrollStoreLog("TunnelController: LibboxSetup ok")
         
+        LibboxPromoteOOMDraft()
+        LibboxDiscardPowerReportDraft()
         LibboxSetMemoryLimit(true)
         
         var cmdError: NSError?
         guard let server = LibboxNewCommandServer(self, self, &cmdError) else {
             let err = cmdError ?? NSError(domain: "TunnelController", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create command server"])
-            AppLogger.shared.error("[TunnelController] LibboxNewCommandServer error: \(err.localizedDescription)")
+            let msg = "LibboxNewCommandServer error: \(err.localizedDescription)"
+            AppLogger.shared.error("[TunnelController] \(msg)")
+            Self.recordTrollStoreError(msg)
             throw err
         }
         self.commandServer = server
         try server.start()
         AppLogger.shared.info("[TunnelController] CommandServer started")
+        Self.appendTrollStoreLog("TunnelController: CommandServer started")
         
         let configJson = config.generateSingBoxConfigJSON()
         AppLogger.shared.info("[TunnelController] Booting sing-box core for \(config.serverAddress)...")
-        try server.startOrReloadService(configJson, options: LibboxOverrideOptions())
-        AppLogger.shared.info("[TunnelController] sing-box core running and accepting traffic!")
+        Self.appendTrollStoreLog("TunnelController: Booting sing-box core...")
+        
+        do {
+            try server.startOrReloadService(configJson, options: LibboxOverrideOptions())
+            AppLogger.shared.info("[TunnelController] sing-box core running and accepting traffic!")
+            Self.appendTrollStoreLog("TunnelController: sing-box core running and routing traffic!")
+        } catch {
+            let msg = "startOrReloadService failed: \(error.localizedDescription)"
+            AppLogger.shared.error("[TunnelController] \(msg)")
+            Self.recordTrollStoreError(msg)
+            throw error
+        }
     }
     
     public func stop() async {
@@ -74,6 +100,7 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
         pathMonitor = nil
         networkSettings = nil
         AppLogger.shared.info("[TunnelController] sing-box core stopped")
+        Self.appendTrollStoreLog("TunnelController: sing-box core stopped")
     }
     
     public func sleep() {
@@ -105,65 +132,105 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
             throw NSError(domain: "TunnelController", code: 2, userInfo: [NSLocalizedDescriptionKey: "nil openTun arguments"])
         }
         
+        Self.appendTrollStoreLog("openTunAsync: configuring network settings...")
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
         settings.mtu = NSNumber(value: options.getMTU() > 0 ? options.getMTU() : 1500)
         
         if options.getAutoRoute() {
-            if let dnsBox = try? options.getDNSServerAddress() {
-                let dns = NEDNSSettings(servers: [dnsBox.value])
-                dns.matchDomains = [""]
-                dns.matchDomainsNoSearch = true
-                settings.dnsSettings = dns
-            } else {
-                let dns = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
-                dns.matchDomains = [""]
-                settings.dnsSettings = dns
+            var dnsServers: [String] = []
+            if let dnsIterator = try? options.getDNSServerAddress() {
+                while dnsIterator.hasNext() {
+                    let s = dnsIterator.next()
+                    if !s.isEmpty {
+                        dnsServers.append(s)
+                    }
+                }
+            }
+            if dnsServers.isEmpty {
+                dnsServers = ["1.1.1.1", "8.8.8.8"]
+            }
+            let dns = NEDNSSettings(servers: dnsServers)
+            dns.matchDomains = [""]
+            dns.matchDomainsNoSearch = true
+            settings.dnsSettings = dns
+            
+            var ipv4Addresses: [String] = []
+            var ipv4SubnetMasks: [String] = []
+            if let v4Iterator = options.getInet4Address() {
+                while v4Iterator.hasNext() {
+                    if let prefix = v4Iterator.next() {
+                        ipv4Addresses.append(prefix.address())
+                        ipv4SubnetMasks.append(prefix.mask())
+                    }
+                }
+            }
+            if ipv4Addresses.isEmpty {
+                ipv4Addresses = ["172.19.0.1"]
+                ipv4SubnetMasks = ["255.255.255.252"]
             }
             
-            let v4 = collectPrefixes(options.getInet4Address())
-            if !v4.isEmpty {
-                let ipv4 = NEIPv4Settings(addresses: v4.map(\.address), subnetMasks: v4.map(\.mask))
-                let routes = collectPrefixes(options.getInet4RouteAddress())
-                ipv4.includedRoutes = routes.isEmpty
-                    ? [NEIPv4Route.default()]
-                    : routes.map { NEIPv4Route(destinationAddress: $0.address, subnetMask: $0.mask) }
-                settings.ipv4Settings = ipv4
-            } else {
-                let ipv4 = NEIPv4Settings(addresses: ["172.19.0.1"], subnetMasks: ["255.255.255.252"])
-                ipv4.includedRoutes = [NEIPv4Route.default()]
-                settings.ipv4Settings = ipv4
+            let ipv4 = NEIPv4Settings(addresses: ipv4Addresses, subnetMasks: ipv4SubnetMasks)
+            
+            var routes: [NEIPv4Route] = []
+            if let routeIterator = options.getInet4RouteAddress() {
+                while routeIterator.hasNext() {
+                    if let prefix = routeIterator.next() {
+                        routes.append(NEIPv4Route(destinationAddress: prefix.address(), subnetMask: prefix.mask()))
+                    }
+                }
             }
+            ipv4.includedRoutes = routes.isEmpty ? [NEIPv4Route.default()] : routes
+            
+            var excludeRoutes: [NEIPv4Route] = []
+            if let excludeIterator = options.getInet4RouteExcludeAddress() {
+                while excludeIterator.hasNext() {
+                    if let prefix = excludeIterator.next() {
+                        excludeRoutes.append(NEIPv4Route(destinationAddress: prefix.address(), subnetMask: prefix.mask()))
+                    }
+                }
+            }
+            ipv4.excludedRoutes = excludeRoutes
+            settings.ipv4Settings = ipv4
         }
         
         self.networkSettings = settings
         try await provider.setTunnelNetworkSettings(settings)
         AppLogger.shared.info("[TunnelController] openTun: Network settings applied, MTU=\(options.getMTU())")
+        Self.appendTrollStoreLog("openTunAsync: settings applied, querying TUN fd...")
         
-        // Hand off kernel utun descriptor to Libbox
+        // Hand off kernel utun descriptor to Libbox via KVC on packetFlow
         if let fd = provider.packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32 {
             AppLogger.shared.info("[TunnelController] openTun: TUN fd acquired via KVC: \(fd)")
+            Self.appendTrollStoreLog("openTunAsync: TUN fd acquired: \(fd)")
             ret0_.pointee = fd
             return
         }
         
         let fallback = LibboxGetTunnelFileDescriptor()
-        guard fallback != -1 else {
-            let err = NSError(domain: "TunnelController", code: 3, userInfo: [NSLocalizedDescriptionKey: "Cannot acquire utun file descriptor"])
-            AppLogger.shared.error("[TunnelController] \(err.localizedDescription)")
-            throw err
+        if fallback != -1 {
+            AppLogger.shared.info("[TunnelController] openTun: TUN fd acquired via fallback: \(fallback)")
+            Self.appendTrollStoreLog("openTunAsync: TUN fd acquired via fallback: \(fallback)")
+            ret0_.pointee = fallback
+            return
         }
-        AppLogger.shared.info("[TunnelController] openTun: TUN fd acquired via fallback: \(fallback)")
-        ret0_.pointee = fallback
+        
+        let err = NSError(domain: "TunnelController", code: 3, userInfo: [NSLocalizedDescriptionKey: "Cannot acquire utun file descriptor from packetFlow or Libbox"])
+        AppLogger.shared.error("[TunnelController] \(err.localizedDescription)")
+        Self.recordTrollStoreError(err.localizedDescription)
+        throw err
     }
     
-    private func collectPrefixes(_ iterator: (any LibboxRoutePrefixIteratorProtocol)?) -> [(address: String, mask: String, prefix: Int32)] {
-        guard let iterator = iterator else { return [] }
-        var out: [(address: String, mask: String, prefix: Int32)] = []
-        while iterator.hasNext() {
-            guard let p = iterator.next() else { break }
-            out.append((p.address(), p.mask(), p.prefix()))
-        }
-        return out
+    // MARK: - Required Logging & Control Protocols
+    
+    public func writeLog(_ message: String?) {
+        guard let message = message, !message.isEmpty else { return }
+        AppLogger.shared.info("[Libbox] \(message)")
+        Self.appendTrollStoreLog("[Libbox] \(message)")
+    }
+    
+    public func writeDebugMessage(_ message: String?) {
+        guard let message = message, !message.isEmpty else { return }
+        AppLogger.shared.debug("[Libbox] \(message)")
     }
     
     public func usePlatformAutoDetectInterfaceControl() -> Bool { false }
@@ -176,6 +243,11 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     public func localDNSTransport() -> (any LibboxLocalDNSTransportProtocol)? { nil }
     public func systemCertificates() -> (any LibboxStringIteratorProtocol)? { nil }
     public func readWIFIState() -> LibboxWIFIState? { nil }
+    public func readWIFISSID() -> String? { nil }
+    public func usePlatformShell() -> Bool { false }
+    public func checkPlatformShell() throws {}
+    public func usePlatformBridge() -> Bool { false }
+    public func usePlatformAutoRedirect() -> Bool { false }
     
     public func findConnectionOwner(_ ipProtocol: Int32, sourceAddress: String?, sourcePort: Int32, destinationAddress: String?, destinationPort: Int32) throws -> LibboxConnectionOwner {
         throw NSError(domain: "TunnelController", code: 4, userInfo: [NSLocalizedDescriptionKey: "findConnectionOwner not implemented"])
@@ -183,6 +255,7 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     
     public func sendNotification(_ notification: LibboxNotification?) throws {}
     public func send(_ notification: LibboxNotification?) throws {}
+    public func cancelNotification(_ identifier: String?, typeID: Int32) throws {}
     
     public func clearDNSCache() {
         guard let networkSettings = networkSettings else { return }
@@ -217,11 +290,30 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     }
     
     private func report(_ path: Network.NWPath, to listener: any LibboxInterfaceUpdateListenerProtocol) {
+        let desc = describeNetworkPath(path)
+        listener.updateNetworkPath(desc)
         guard path.status != .unsatisfied, let iface = path.availableInterfaces.first else {
             listener.updateDefaultInterface("", interfaceIndex: -1, isExpensive: false, isConstrained: false)
             return
         }
         listener.updateDefaultInterface(iface.name, interfaceIndex: Int32(iface.index), isExpensive: path.isExpensive, isConstrained: path.isConstrained)
+    }
+    
+    private func describeNetworkPath(_ path: Network.NWPath) -> String {
+        var comps: [String] = []
+        switch path.status {
+        case .satisfied: comps.append("satisfied")
+        case .unsatisfied: comps.append("unsatisfied")
+        case .requiresConnection: comps.append("requiresConnection")
+        @unknown default: comps.append("unknown")
+        }
+        if !path.availableInterfaces.isEmpty {
+            comps.append("interfaces=" + path.availableInterfaces.map { "\($0.name)#\($0.index)" }.joined(separator: ","))
+        }
+        if path.supportsIPv4 { comps.append("ipv4") }
+        if path.supportsIPv6 { comps.append("ipv6") }
+        if path.supportsDNS { comps.append("dns") }
+        return comps.joined(separator: " ")
     }
     
     public func closeDefaultInterfaceMonitor(_ listener: (any LibboxInterfaceUpdateListenerProtocol)?) throws {
@@ -255,12 +347,31 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
         try commandServer?.closeService()
     }
     public func setSystemProxyEnabled(_ enabled: Bool) throws {}
-    public func writeDebugMessage(_ message: String?) {
-        if let msg = message, !msg.isEmpty {
-            AppLogger.shared.debug("[Libbox] \(msg)")
+    
+    // MARK: - TrollStore Logging & IPC Helper
+    
+    public static func recordTrollStoreError(_ error: String) {
+        try? error.write(toFile: "/private/var/tmp/federalvpn_last_error.txt", atomically: true, encoding: .utf8)
+        appendTrollStoreLog("ERROR: \(error)")
+    }
+    
+    public static func appendTrollStoreLog(_ log: String) {
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(ts)] \(log)\n"
+        if let data = line.data(using: .utf8) {
+            let path = "/private/var/tmp/federalvpn_tunnel.log"
+            if let fileHandle = FileHandle(forWritingAtPath: path) {
+                fileHandle.seekToEndOfFile()
+                fileHandle.write(data)
+                fileHandle.closeFile()
+            } else {
+                try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+            }
         }
     }
 }
+
+// MARK: - Iterators & Concurrency Helpers
 
 final class InterfaceIterator: NSObject, LibboxNetworkInterfaceIteratorProtocol {
     private var iterator: Array<LibboxNetworkInterface>.Iterator
@@ -270,27 +381,36 @@ final class InterfaceIterator: NSObject, LibboxNetworkInterfaceIteratorProtocol 
     func next() -> LibboxNetworkInterface? { peeked }
 }
 
+private final class ThreadResultBox<T> {
+    var result: Result<T, Error>!
+    var value: T!
+}
+
 @discardableResult
 func runBlocking<T>(_ body: @escaping () async -> T) -> T {
     let semaphore = DispatchSemaphore(value: 0)
-    var value: T?
-    Task {
-        value = await body()
+    let box = ThreadResultBox<T>()
+    Task.detached(priority: .userInitiated) {
+        box.value = await body()
         semaphore.signal()
     }
     semaphore.wait()
-    return value!
+    return box.value
 }
 
 func runBlockingThrowing<T>(_ body: @escaping () async throws -> T) throws -> T {
     let semaphore = DispatchSemaphore(value: 0)
-    var result: Result<T, Error>!
-    Task {
-        do { result = .success(try await body()) } catch { result = .failure(error) }
+    let box = ThreadResultBox<T>()
+    Task.detached(priority: .userInitiated) {
+        do {
+            box.result = .success(try await body())
+        } catch {
+            box.result = .failure(error)
+        }
         semaphore.signal()
     }
     semaphore.wait()
-    return try result.get()
+    return try box.result.get()
 }
 
 #endif

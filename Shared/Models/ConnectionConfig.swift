@@ -140,8 +140,7 @@ public struct ConnectionConfig: Codable, Equatable {
         return """
         {
           "log": {
-            "level": "warn",
-            "timestamp": true
+            "level": "warn"
           },
           "dns": {
             "servers": [
@@ -156,18 +155,17 @@ public struct ConnectionConfig: Codable, Equatable {
                 "detour": "direct"
               }
             ],
-            "final": "remote-dns",
             "strategy": "prefer_ipv4"
           },
           "inbounds": [
             {
               "type": "tun",
               "tag": "tun-in",
-              "address": ["172.19.0.1/30"],
+              "inet4_address": "172.19.0.1/30",
               "mtu": 1500,
               "auto_route": true,
-              "strict_route": true,
-              "stack": "system",
+              "strict_route": false,
+              "stack": "mixed",
               "sniff": true
             }
           ],

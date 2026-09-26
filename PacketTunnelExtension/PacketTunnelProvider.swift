@@ -25,6 +25,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
         tunnelStartTime = Date()
         lastErrorMessage = nil
         SharedDefaults.shared.lastTunnelError = nil
+        try? FileManager.default.removeItem(atPath: "/private/var/tmp/federalvpn_last_error.txt")
         
         // 1. Получение конфигурации подключения (из options или SharedDefaults)
         let config: ConnectionConfig
@@ -55,6 +56,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.logExtension("ERROR: \(msg)")
                 self.lastErrorMessage = msg
                 SharedDefaults.shared.lastTunnelError = msg
+                TunnelController.recordTrollStoreError(msg)
                 completionHandler(error)
             }
         }

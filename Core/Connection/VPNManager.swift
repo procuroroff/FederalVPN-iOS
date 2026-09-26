@@ -181,7 +181,13 @@ public final class VPNManager: ObservableObject {
                 
             case .disconnected:
                 self.connectTimeoutWorkItem?.cancel()
-                if let extErr = SharedDefaults.shared.lastTunnelError {
+                var errorMsg = SharedDefaults.shared.lastTunnelError
+                if errorMsg == nil || errorMsg?.isEmpty == true {
+                    if let tmpErr = try? String(contentsOfFile: "/private/var/tmp/federalvpn_last_error.txt", encoding: .utf8), !tmpErr.isEmpty {
+                        errorMsg = tmpErr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+                if let extErr = errorMsg, !extErr.isEmpty {
                     self.lastError = extErr
                     self.status = .error
                     AppLogger.shared.error("[VPNManager] Extension reported error: \(extErr)")
