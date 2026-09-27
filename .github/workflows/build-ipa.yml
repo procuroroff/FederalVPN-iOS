@@ -59,25 +59,13 @@ jobs:
           mkdir -p build/Payload
           cp -r build/FederalVPN.xcarchive/Products/Applications/FederalVPN.app build/Payload/
           
-          echo "Signing embedded frameworks..."
-          if [ -d "build/Payload/FederalVPN.app/Frameworks" ]; then
-            for fw in build/Payload/FederalVPN.app/Frameworks/*; do
-              if [ -d "$fw" ]; then
-                echo "Signing $fw"
-                codesign -s - --force "$fw" 2>/dev/null || true
-              fi
-            done
-          fi
-
           echo "Signing PacketTunnelExtension with entitlements for TrollStore..."
           if [ -d "build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex" ]; then
             ldid -SPacketTunnelExtension/PacketTunnelExtension.entitlements build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex/PacketTunnelExtension
-            codesign -s - --force --entitlements PacketTunnelExtension/PacketTunnelExtension.entitlements build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex
           fi
           
           echo "Signing FederalVPN main application with entitlements for TrollStore..."
           ldid -SFederalVPN.entitlements build/Payload/FederalVPN.app/FederalVPN
-          codesign -s - --force --entitlements FederalVPN.entitlements build/Payload/FederalVPN.app
           
           echo "Verifying embedded entitlements:"
           ldid -e build/Payload/FederalVPN.app/FederalVPN

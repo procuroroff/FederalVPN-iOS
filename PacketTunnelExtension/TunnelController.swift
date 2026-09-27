@@ -273,7 +273,7 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
             }
         }
         monitor.start(queue: .global())
-        semaphore.wait()
+        _ = semaphore.wait(timeout: .now() + 0.5)
     }
     
     private func report(_ path: Network.NWPath, to listener: any LibboxInterfaceUpdateListenerProtocol) {

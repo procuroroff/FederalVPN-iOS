@@ -26,8 +26,6 @@ targets:
       - path: Shared
     dependencies:
       - target: PacketTunnelExtension
-      - framework: Frameworks/Libbox.xcframework
-        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.federalvpn.app
