@@ -161,14 +161,13 @@ public struct ConnectionConfig: Codable, Equatable {
             {
               "type": "tun",
               "tag": "tun-in",
-              "inet4_address": [
+              "address": [
                 "172.19.0.1/30"
               ],
               "mtu": 1500,
               "auto_route": true,
               "strict_route": false,
-              "stack": "mixed",
-              "sniff": true
+              "stack": "mixed"
             }
           ],
           "outbounds": [
