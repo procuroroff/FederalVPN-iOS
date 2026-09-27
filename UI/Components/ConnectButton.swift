@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct ConnectButton: View {
+    @ObservedObject private var themeManager = ThemeManager.shared
     let status: ConnectionStatus
     let action: () -> Void
     

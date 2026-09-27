@@ -28,6 +28,7 @@ public final class SharedDefaults {
         static let lastActiveConfig = "com.federalvpn.lastActiveConfig"
         static let lastTunnelError = "com.federalvpn.lastTunnelError"
         static let lastTunnelLog = "com.federalvpn.lastTunnelLog"
+        static let appTheme = "com.federalvpn.appTheme"
     }
     
     public var lastTunnelError: String? {
@@ -73,6 +74,11 @@ public final class SharedDefaults {
     public var lastConnectedDate: Date? {
         get { defaults.object(forKey: Keys.lastConnectedDate) as? Date }
         set { defaults.set(newValue, forKey: Keys.lastConnectedDate) }
+    }
+    
+    public var appTheme: String {
+        get { defaults.string(forKey: Keys.appTheme) ?? "crimson" }
+        set { defaults.set(newValue, forKey: Keys.appTheme) }
     }
     
     // MARK: - Кеш серверов

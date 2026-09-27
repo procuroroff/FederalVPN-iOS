@@ -145,14 +145,20 @@ public struct ConnectionConfig: Codable, Equatable {
           "dns": {
             "servers": [
               {
-                "tag": "remote-dns",
+                "tag": "dns-remote",
                 "address": "tcp://1.1.1.1",
                 "detour": "proxy"
               },
               {
-                "tag": "local-dns",
-                "address": "local",
+                "tag": "dns-direct",
+                "address": "1.1.1.1",
                 "detour": "direct"
+              }
+            ],
+            "rules": [
+              {
+                "outbound": "any",
+                "server": "dns-direct"
               }
             ],
             "strategy": "prefer_ipv4"
@@ -203,10 +209,6 @@ public struct ConnectionConfig: Codable, Equatable {
               {
                 "protocol": "dns",
                 "action": "hijack-dns"
-              },
-              {
-                "ip_is_private": true,
-                "outbound": "direct"
               }
             ],
             "final": "proxy",

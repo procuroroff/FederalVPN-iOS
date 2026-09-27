@@ -6,10 +6,10 @@ public extension Color {
     static let appSurface = Color(red: 0.10, green: 0.10, blue: 0.12)    // Поверхность карточек
     static let appSurfaceElevated = Color(red: 0.14, green: 0.14, blue: 0.17)
     
-    // Акцентный красный
-    static let appRed = Color(red: 0.88, green: 0.15, blue: 0.18)        // Яркий рубиново-красный
-    static let appRedDark = Color(red: 0.60, green: 0.08, blue: 0.10)    // Темно-красный для градиентов
-    static let appRedGlow = Color(red: 0.95, green: 0.20, blue: 0.22, opacity: 0.4)
+    // Акцентный цвет (динамически управляется ThemeManager)
+    static var appRed: Color { ThemeManager.shared.currentTheme.primaryColor }
+    static var appRedDark: Color { ThemeManager.shared.currentTheme.darkColor }
+    static var appRedGlow: Color { ThemeManager.shared.currentTheme.glowColor }
     
     // Вспомогательные
     static let appGreen = Color(red: 0.15, green: 0.80, blue: 0.45)      // Для статуса CONNECTED
@@ -20,11 +20,9 @@ public extension Color {
 }
 
 public extension LinearGradient {
-    static let appRedGradient = LinearGradient(
-        colors: [Color.appRed, Color.appRedDark],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static var appRedGradient: LinearGradient {
+        ThemeManager.shared.currentTheme.gradient
+    }
     
     static let appGlassGradient = LinearGradient(
         colors: [Color.white.opacity(0.08), Color.white.opacity(0.02)],

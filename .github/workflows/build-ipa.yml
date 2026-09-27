@@ -64,6 +64,11 @@ jobs:
             ldid -SPacketTunnelExtension/PacketTunnelExtension.entitlements build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex/PacketTunnelExtension
           fi
           
+          echo "Signing FederalVPNWidgets with entitlements for TrollStore..."
+          if [ -d "build/Payload/FederalVPN.app/PlugIns/FederalVPNWidgets.appex" ]; then
+            ldid -SWidgets/FederalVPNWidgets.entitlements build/Payload/FederalVPN.app/PlugIns/FederalVPNWidgets.appex/FederalVPNWidgets
+          fi
+          
           echo "Signing FederalVPN main application with entitlements for TrollStore..."
           ldid -SFederalVPN.entitlements build/Payload/FederalVPN.app/FederalVPN
           
@@ -73,6 +78,10 @@ jobs:
           if [ -d "build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex" ]; then
             echo "=== PacketTunnelExtension.appex entitlements ==="
             ldid -e build/Payload/FederalVPN.app/PlugIns/PacketTunnelExtension.appex/PacketTunnelExtension
+          fi
+          if [ -d "build/Payload/FederalVPN.app/PlugIns/FederalVPNWidgets.appex" ]; then
+            echo "=== FederalVPNWidgets.appex entitlements ==="
+            ldid -e build/Payload/FederalVPN.app/PlugIns/FederalVPNWidgets.appex/FederalVPNWidgets
           fi
           
           echo "Copying root-level icons for SpringBoard / TrollStore uicache..."

@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var showServerList = false
     @State private var showSettings = false
     @State private var showDiagnostics = false

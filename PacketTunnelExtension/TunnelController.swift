@@ -13,6 +13,7 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     private var networkSettings: NEPacketTunnelNetworkSettings?
     private var pathMonitor: NWPathMonitor?
     private let monitorQueue = DispatchQueue(label: "com.federalvpn.tunnel.pathmonitor")
+    private var currentConfig: ConnectionConfig?
     
     public init(provider: NEPacketTunnelProvider) {
         self.provider = provider
@@ -22,6 +23,7 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     // MARK: - Жизненный цикл
     
     public func start(with config: ConnectionConfig) async throws {
+        self.currentConfig = config
         Self.appendTrollStoreLog("TunnelController: starting core for \(config.serverAddress):\(config.serverPort)")
         
         let base = Self.workBaseURL()
@@ -176,6 +178,12 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
                         excludeRoutes.append(NEIPv4Route(destinationAddress: prefix.address(), subnetMask: prefix.mask()))
                     }
                 }
+            }
+            if let config = currentConfig,
+               let serverIP = resolveHostToIPv4(config.serverAddress) {
+                excludeRoutes.append(NEIPv4Route(destinationAddress: serverIP, subnetMask: "255.255.255.255"))
+                AppLogger.shared.info("[TunnelController] Excluded VPN server IP from tunnel route: \(serverIP)")
+                Self.appendTrollStoreLog("openTunAsync: Excluded server IP from tunnel route: \(serverIP)")
             }
             ipv4.excludedRoutes = excludeRoutes
             settings.ipv4Settings = ipv4
@@ -365,6 +373,36 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
                 try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
             }
         }
+    }
+    
+    private func resolveHostToIPv4(_ host: String) -> String? {
+        let clean = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        var sin = sockaddr_in()
+        if clean.withCString({ inet_pton(AF_INET, $0, &sin.sin_addr) }) == 1 {
+            return clean
+        }
+        var hints = addrinfo(
+            ai_flags: AI_DEFAULT,
+            ai_family: AF_INET,
+            ai_socktype: SOCK_STREAM,
+            ai_protocol: 0,
+            ai_addrlen: 0,
+            ai_canonname: nil,
+            ai_addr: nil,
+            ai_next: nil
+        )
+        var res: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(clean, nil, &hints, &res) == 0, let first = res else {
+            return nil
+        }
+        defer { freeaddrinfo(res) }
+        var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        let sockAddr = first.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+        var addr = sockAddr.sin_addr
+        guard inet_ntop(AF_INET, &addr, &buffer, socklen_t(NI_MAXHOST)) != nil else {
+            return nil
+        }
+        return String(cString: buffer)
     }
 }
 

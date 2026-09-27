@@ -17,6 +17,7 @@ public final class VPNManager: ObservableObject {
     private var statusObserver: AnyCancellable?
     private var durationTimer: Timer?
     private var connectTimeoutWorkItem: DispatchWorkItem?
+    private var connectedDate: Date?
     
     private let pathMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.federalvpn.pathmonitor")
@@ -166,6 +167,24 @@ public final class VPNManager: ObservableObject {
             name: .NEVPNStatusDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func appWillEnterForeground() {
+        if status == .connected {
+            updateDuration()
+        }
     }
     
     @objc private func vpnStatusDidChange(_ notification: Notification) {
@@ -215,7 +234,17 @@ public final class VPNManager: ObservableObject {
             case .connected:
                 self.connectTimeoutWorkItem?.cancel()
                 self.status = .connected
+                if self.connectedDate == nil {
+                    self.connectedDate = SharedDefaults.shared.lastConnectedDate ?? Date()
+                    SharedDefaults.shared.lastConnectedDate = self.connectedDate
+                }
                 self.startDurationTimer()
+                LiveActivityManager.shared.startLiveActivity(
+                    serverName: self.activeServer?.name ?? "Federal Node",
+                    serverFlag: self.activeServer?.flag ?? "🛡️",
+                    serverCountry: self.activeServer?.country ?? "Защищенный туннель",
+                    connectedDate: self.connectedDate ?? Date()
+                )
                 AppLogger.shared.info("[VPNManager] Status changed: CONNECTED")
                 
             case .reasserting:
@@ -235,17 +264,26 @@ public final class VPNManager: ObservableObject {
     // MARK: - Таймер длительности сессии
     
     private func startDurationTimer() {
-        stopDurationTimer()
-        connectionDuration = 0
+        durationTimer?.invalidate()
+        durationTimer = nil
+        updateDuration()
         durationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.connectionDuration += 1
+            self?.updateDuration()
         }
+    }
+    
+    public func updateDuration() {
+        guard let startDate = connectedDate else { return }
+        connectionDuration = max(0, Int(Date().timeIntervalSince(startDate)))
     }
     
     private func stopDurationTimer() {
         durationTimer?.invalidate()
         durationTimer = nil
+        connectedDate = nil
+        SharedDefaults.shared.lastConnectedDate = nil
         connectionDuration = 0
+        LiveActivityManager.shared.stopLiveActivity()
     }
     
     // MARK: - Мониторинг типа сети (Wi-Fi / Cellular / No Connection)

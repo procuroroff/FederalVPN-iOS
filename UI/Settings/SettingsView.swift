@@ -3,6 +3,7 @@ import SwiftUI
 public struct SettingsView: View {
     @Environment(\.presentationMode) private var presentationMode
     @StateObject private var viewModel = SettingsViewModel()
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var showLogin = false
     @State private var showDiagnostics = false
     
@@ -36,6 +37,9 @@ public struct SettingsView: View {
                     VStack(spacing: 18) {
                         // Блок аккаунта
                         accountSection
+                        
+                        // Тема оформления
+                        themeSection
                         
                         // Параметры подключения
                         connectionSettingsSection
@@ -113,6 +117,49 @@ public struct SettingsView: View {
                         .background(Color.appRed)
                         .foregroundColor(.white)
                         .cornerRadius(8)
+                    }
+                }
+            }
+        }
+    }
+    
+    private var themeSection: some View {
+        GlassCard(cornerRadius: 16, padding: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("ТЕМА ОФОРМЛЕНИЯ")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(Color.appTextMuted)
+                    Spacer()
+                    Text(themeManager.currentTheme.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(themeManager.currentTheme.primaryColor)
+                }
+                
+                HStack(spacing: 12) {
+                    ForEach(AppTheme.allCases) { theme in
+                        Button(action: {
+                            themeManager.setTheme(theme)
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(theme.gradient)
+                                    .frame(width: 40, height: 40)
+                                    .shadow(color: themeManager.currentTheme == theme ? theme.glowColor : .clear, radius: 8)
+                                
+                                if themeManager.currentTheme == theme {
+                                    Circle()
+                                        .stroke(Color.white, lineWidth: 2.5)
+                                        .frame(width: 46, height: 46)
+                                    
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.white)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
                 }
             }

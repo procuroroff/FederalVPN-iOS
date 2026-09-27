@@ -26,6 +26,7 @@ targets:
       - path: Shared
     dependencies:
       - target: PacketTunnelExtension
+      - target: FederalVPNWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.federalvpn.app
@@ -64,3 +65,20 @@ targets:
           - $(inherited)
           - "@executable_path/Frameworks"
           - "@executable_path/../../Frameworks"
+
+  FederalVPNWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: Widgets
+      - path: Shared/Models/VPNActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.federalvpn.app.widgets
+        CODE_SIGN_ENTITLEMENTS: Widgets/FederalVPNWidgets.entitlements
+        INFOPLIST_FILE: Widgets/Info.plist
+        WRAPPER_EXTENSION: appex
+        SKIP_INSTALL: YES
+        SWIFT_VERSION: "5.9"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.1"
