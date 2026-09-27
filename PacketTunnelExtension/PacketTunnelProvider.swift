@@ -17,7 +17,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
     
     // MARK: - Жизненный цикл туннеля
     
-    open override func startTunnel(options: [String : NSObject]?) async throws {
+    public override func startTunnel(options: [String : NSObject]?) async throws {
         logExtension(">>> startTunnel initiated")
         tunnelStartTime = Date()
         lastErrorMessage = nil
@@ -73,7 +73,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
         #endif
     }
     
-    open override func stopTunnel(with reason: NEProviderStopReason) async {
+    public override func stopTunnel(with reason: NEProviderStopReason) async {
         logExtension("<<< stopTunnel called with reason: \(reason.rawValue)")
         isTunnelActive = false
         tunnelStartTime = nil
