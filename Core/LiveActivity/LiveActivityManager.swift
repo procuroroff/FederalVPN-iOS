@@ -29,12 +29,22 @@ public final class LiveActivityManager {
             )
             
             do {
-                let activity = try Activity<VPNActivityAttributes>.request(
-                    attributes: attributes,
-                    content: .init(state: contentState, staleDate: nil)
-                )
-                self.currentActivity = activity
-                AppLogger.shared.info("[LiveActivity] Started Live Activity: \(activity.id)")
+                if #available(iOS 16.2, *) {
+                    let activity = try Activity<VPNActivityAttributes>.request(
+                        attributes: attributes,
+                        content: .init(state: contentState, staleDate: nil)
+                    )
+                    self.currentActivity = activity
+                    AppLogger.shared.info("[LiveActivity] Started Live Activity: \(activity.id)")
+                } else {
+                    let activity = try Activity<VPNActivityAttributes>.request(
+                        attributes: attributes,
+                        contentState: contentState,
+                        pushType: nil
+                    )
+                    self.currentActivity = activity
+                    AppLogger.shared.info("[LiveActivity] Started Live Activity: \(activity.id)")
+                }
             } catch {
                 AppLogger.shared.warning("[LiveActivity] Request error: \(error.localizedDescription)")
             }
@@ -42,10 +52,18 @@ public final class LiveActivityManager {
     }
     
     public func stopLiveActivity() {
-        if #available(iOS 16.1, *) {
+        if #available(iOS 16.2, *) {
             Task {
                 for activity in Activity<VPNActivityAttributes>.activities {
                     await activity.end(dismissalPolicy: .immediate)
+                }
+            }
+            self.currentActivity = nil
+            AppLogger.shared.info("[LiveActivity] Stopped Live Activities")
+        } else if #available(iOS 16.1, *) {
+            Task {
+                for activity in Activity<VPNActivityAttributes>.activities {
+                    await activity.end(using: nil, dismissalPolicy: .immediate)
                 }
             }
             self.currentActivity = nil

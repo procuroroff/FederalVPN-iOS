@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import NetworkExtension
 import Combine
 import Network
