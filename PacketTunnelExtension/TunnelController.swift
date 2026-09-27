@@ -162,14 +162,25 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
             let ipv4 = NEIPv4Settings(addresses: ipv4Addresses, subnetMasks: ipv4SubnetMasks)
             
             var routes: [NEIPv4Route] = []
-            if let routeIterator = options.getInet4RouteAddress() {
+            if let routeIterator = options.getInet4RouteAddress(), routeIterator.hasNext() {
                 while routeIterator.hasNext() {
                     if let prefix = routeIterator.next() {
                         routes.append(NEIPv4Route(destinationAddress: prefix.address(), subnetMask: prefix.mask()))
                     }
                 }
+            } else {
+                // Sub-ranges: перехватывает весь трафик 1.0.0.0 - 255.255.255.255 в utun,
+                // сохраняя физический маршрут по умолчанию (0.0.0.0/0) на Wi-Fi/LTE для исходящих пакетов sing-box
+                routes.append(NEIPv4Route(destinationAddress: "1.0.0.0", subnetMask: "255.0.0.0"))
+                routes.append(NEIPv4Route(destinationAddress: "2.0.0.0", subnetMask: "254.0.0.0"))
+                routes.append(NEIPv4Route(destinationAddress: "4.0.0.0", subnetMask: "252.0.0.0"))
+                routes.append(NEIPv4Route(destinationAddress: "8.0.0.0", subnetMask: "248.0.0.0"))
+                routes.append(NEIPv4Route(destinationAddress: "16.0.0.0", subnetMask: "240.0.0.0"))
+                routes.append(NEIPv4Route(destinationAddress: "32.0.0.0", subnetMask: "224.0.0.0"))
+                routes.append(NEIPv4Route(destinationAddress: "64.0.0.0", subnetMask: "192.0.0.0"))
+                routes.append(NEIPv4Route(destinationAddress: "128.0.0.0", subnetMask: "128.0.0.0"))
             }
-            ipv4.includedRoutes = routes.isEmpty ? [NEIPv4Route.default()] : routes
+            ipv4.includedRoutes = routes
             
             var excludeRoutes: [NEIPv4Route] = []
             if let excludeIterator = options.getInet4RouteExcludeAddress() {

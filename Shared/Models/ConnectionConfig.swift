@@ -133,7 +133,13 @@ public struct ConnectionConfig: Codable, Equatable {
         let port = serverPort > 0 ? serverPort : 443
         let uuid = userId.isEmpty ? "7ad08a3b-53bb-4902-a0a3-6b6c4f42d019" : userId
         let sni = serverName.isEmpty ? "www.nvidia.com" : serverName
-        let pbk = publicKey.isEmpty ? "PIJ9YOUeKXNf-CY_y69wBMASbmEHyFHoc6AK_jOF2nw" : publicKey
+        let rawPbk = publicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pbk: String
+        if rawPbk.isEmpty || rawPbk.contains("PLACEHOLDER") {
+            pbk = "PIJ9YOUeKXNf-CY_y69wBMASbmEHyFHoc6AK_jOF2nw"
+        } else {
+            pbk = rawPbk.replacingOccurrences(of: " ", with: "+")
+        }
         let flowStr = flow.isEmpty ? "xtls-rprx-vision" : flow
         let fp = fingerprint.isEmpty ? "chrome" : fingerprint
         
@@ -145,13 +151,15 @@ public struct ConnectionConfig: Codable, Equatable {
           "dns": {
             "servers": [
               {
+                "type": "tcp",
                 "tag": "dns-remote",
-                "address": "tcp://1.1.1.1",
+                "server": "1.1.1.1",
                 "detour": "proxy"
               },
               {
+                "type": "udp",
                 "tag": "dns-direct",
-                "address": "1.1.1.1",
+                "server": "1.1.1.1",
                 "detour": "direct"
               }
             ],

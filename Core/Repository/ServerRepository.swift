@@ -18,6 +18,8 @@ public final class ServerRepository: ObservableObject {
     }
     
     private func loadInitialServers() {
+        let (presetServers, presetConfigs) = configRepo.getDefaultFederalServers()
+        self.configs = presetConfigs
         let cached = SharedDefaults.shared.getCachedServers()
         if !cached.isEmpty {
             self.servers = cached
@@ -122,10 +124,20 @@ public final class ServerRepository: ObservableObject {
         if let existing = configs[server.id] {
             return existing
         }
+        // Если конфиг не найден по ID, ищем в пресетах по адресу хоста
+        let (_, defaultConfigs) = configRepo.getDefaultFederalServers()
+        if let match = defaultConfigs.values.first(where: { $0.serverAddress == server.address }) {
+            return match
+        }
+        // Запасной вариант с валидным REALITY pbk
+        if let defaultSw = defaultConfigs.values.first {
+            return defaultSw
+        }
         return ConnectionConfig(
             serverAddress: server.address,
             serverPort: server.port,
-            userId: KeychainManager.shared.getString(key: .activeUserId) ?? ConfigurationRepository.defaultUserUUID
+            userId: KeychainManager.shared.getString(key: .activeUserId) ?? ConfigurationRepository.defaultUserUUID,
+            publicKey: "PIJ9YOUeKXNf-CY_y69wBMASbmEHyFHoc6AK_jOF2nw"
         )
     }
 }
