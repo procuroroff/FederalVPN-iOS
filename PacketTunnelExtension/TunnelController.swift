@@ -12,6 +12,7 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     private var commandServer: LibboxCommandServer?
     private var networkSettings: NEPacketTunnelNetworkSettings?
     private var pathMonitor: NWPathMonitor?
+    private let monitorQueue = DispatchQueue(label: "com.federalvpn.tunnel.pathmonitor")
     
     public init(provider: NEPacketTunnelProvider) {
         self.provider = provider
@@ -185,23 +186,31 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
         AppLogger.shared.info("[TunnelController] openTun: Network settings applied, MTU=\(options.getMTU())")
         Self.appendTrollStoreLog("openTunAsync: settings applied, querying TUN fd...")
         
-        // Hand off kernel utun descriptor to Libbox via KVC on packetFlow
-        if let fd = provider.packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32 {
-            AppLogger.shared.info("[TunnelController] openTun: TUN fd acquired via KVC: \(fd)")
-            Self.appendTrollStoreLog("openTunAsync: TUN fd acquired: \(fd)")
-            ret0_.pointee = fd
-            return
+        // Loop to acquire the utun file descriptor using LibboxGetTunnelFileDescriptor()
+        for attempt in 1...10 {
+            let fd = LibboxGetTunnelFileDescriptor()
+            if fd != -1 {
+                AppLogger.shared.info("[TunnelController] openTun: TUN fd acquired on attempt \(attempt): \(fd)")
+                Self.appendTrollStoreLog("openTunAsync: TUN fd acquired: \(fd) (attempt \(attempt))")
+                ret0_.pointee = fd
+                return
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms wait
         }
         
-        let fallback = LibboxGetTunnelFileDescriptor()
-        if fallback != -1 {
-            AppLogger.shared.info("[TunnelController] openTun: TUN fd acquired via fallback: \(fallback)")
-            Self.appendTrollStoreLog("openTunAsync: TUN fd acquired via fallback: \(fallback)")
-            ret0_.pointee = fallback
-            return
+        // Safe fallback check on packetFlow ONLY if selector is implemented to avoid NSUnknownKeyException SIGABRT
+        if provider.packetFlow.responds(to: NSSelectorFromString("socket")) {
+            if let socketObj = provider.packetFlow.value(forKey: "socket") as? NSObject,
+               socketObj.responds(to: NSSelectorFromString("fileDescriptor")),
+               let fd = socketObj.value(forKey: "fileDescriptor") as? Int32 {
+                AppLogger.shared.info("[TunnelController] openTun: TUN fd acquired via packetFlow: \(fd)")
+                Self.appendTrollStoreLog("openTunAsync: TUN fd acquired via packetFlow: \(fd)")
+                ret0_.pointee = fd
+                return
+            }
         }
         
-        let err = NSError(domain: "TunnelController", code: 3, userInfo: [NSLocalizedDescriptionKey: "Cannot acquire utun file descriptor from packetFlow or Libbox"])
+        let err = NSError(domain: "TunnelController", code: 3, userInfo: [NSLocalizedDescriptionKey: "Cannot acquire utun file descriptor after 10 attempts"])
         AppLogger.shared.error("[TunnelController] \(err.localizedDescription)")
         Self.recordTrollStoreError(err.localizedDescription)
         throw err
@@ -272,7 +281,7 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
                 self?.report(path, to: listener)
             }
         }
-        monitor.start(queue: .global())
+        monitor.start(queue: monitorQueue)
         _ = semaphore.wait(timeout: .now() + 0.5)
     }
     
@@ -319,14 +328,34 @@ public final class TunnelController: NSObject, LibboxPlatformInterfaceProtocol, 
     // MARK: - TrollStore Logging & IPC Helper
     
     public static func recordTrollStoreError(_ error: String) {
-        try? error.write(toFile: "/private/var/tmp/federalvpn_last_error.txt", atomically: true, encoding: .utf8)
+        SharedDefaults.shared.lastTunnelError = error
         appendTrollStoreLog("ERROR: \(error)")
+        
+        if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedDefaults.appGroupIdentifier) {
+            let errorFile = groupURL.appendingPathComponent("last_error.txt")
+            try? error.write(to: errorFile, atomically: true, encoding: .utf8)
+        }
+        try? error.write(toFile: "/private/var/tmp/federalvpn_last_error.txt", atomically: true, encoding: .utf8)
     }
     
     public static func appendTrollStoreLog(_ log: String) {
         let ts = ISO8601DateFormatter().string(from: Date())
         let line = "[\(ts)] \(log)\n"
+        
+        SharedDefaults.shared.lastTunnelLog = log
+        
         if let data = line.data(using: .utf8) {
+            if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedDefaults.appGroupIdentifier) {
+                let logURL = groupURL.appendingPathComponent("tunnel.log")
+                if let fileHandle = try? FileHandle(forWritingTo: logURL) {
+                    fileHandle.seekToEndOfFile()
+                    fileHandle.write(data)
+                    fileHandle.closeFile()
+                } else {
+                    try? data.write(to: logURL, options: .atomic)
+                }
+            }
+            
             let path = "/private/var/tmp/federalvpn_tunnel.log"
             if let fileHandle = FileHandle(forWritingAtPath: path) {
                 fileHandle.seekToEndOfFile()

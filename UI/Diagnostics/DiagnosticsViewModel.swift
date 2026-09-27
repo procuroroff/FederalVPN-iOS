@@ -60,8 +60,18 @@ public final class DiagnosticsViewModel: ObservableObject {
         if let extLog = SharedDefaults.shared.lastTunnelLog {
             allLogs += "\n[Extension] " + extLog
         }
+        if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedDefaults.appGroupIdentifier) {
+            let logURL = groupURL.appendingPathComponent("tunnel.log")
+            if let groupLogs = try? String(contentsOf: logURL, encoding: .utf8), !groupLogs.isEmpty {
+                allLogs += "\n=== TUNNEL CORE LOGS (AppGroup) ===\n" + groupLogs
+            }
+            let errURL = groupURL.appendingPathComponent("last_error.txt")
+            if let groupErr = try? String(contentsOf: errURL, encoding: .utf8), !groupErr.isEmpty {
+                allLogs += "\n[AppGroup Last Error] " + groupErr
+            }
+        }
         if let sharedLogs = try? String(contentsOfFile: "/private/var/tmp/federalvpn_tunnel.log", encoding: .utf8), !sharedLogs.isEmpty {
-            allLogs += "\n=== TUNNEL CORE LOGS ===\n" + sharedLogs
+            allLogs += "\n=== TUNNEL CORE LOGS (Tmp) ===\n" + sharedLogs
         }
         logs = allLogs
         tunnelStatus = (vpnManager.status == .connected) ? "Active (TUN0)" : "Inactive"

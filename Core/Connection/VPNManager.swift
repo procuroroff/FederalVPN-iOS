@@ -94,7 +94,10 @@ public final class VPNManager: ObservableObject {
             
             do {
                 let configData = try JSONEncoder().encode(config)
-                let options: [String: NSObject] = ["config": configData as NSObject]
+                let options: [String: NSObject] = [
+                    "config": configData as NSObject,
+                    "configContent": config.generateSingBoxConfigJSON() as NSString
+                ]
                 
                 try manager.connection.startVPNTunnel(options: options)
                 AppLogger.shared.info("[VPNManager] startVPNTunnel called successfully")
@@ -183,8 +186,16 @@ public final class VPNManager: ObservableObject {
                 self.connectTimeoutWorkItem?.cancel()
                 var errorMsg = SharedDefaults.shared.lastTunnelError
                 if errorMsg == nil || errorMsg?.isEmpty == true {
-                    if let tmpErr = try? String(contentsOfFile: "/private/var/tmp/federalvpn_last_error.txt", encoding: .utf8), !tmpErr.isEmpty {
-                        errorMsg = tmpErr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedDefaults.appGroupIdentifier) {
+                        let errorFile = groupURL.appendingPathComponent("last_error.txt")
+                        if let content = try? String(contentsOf: errorFile, encoding: .utf8), !content.isEmpty {
+                            errorMsg = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    }
+                    if errorMsg == nil || errorMsg?.isEmpty == true {
+                        if let tmpErr = try? String(contentsOfFile: "/private/var/tmp/federalvpn_last_error.txt", encoding: .utf8), !tmpErr.isEmpty {
+                            errorMsg = tmpErr.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
                     }
                 }
                 if let extErr = errorMsg, !extErr.isEmpty {

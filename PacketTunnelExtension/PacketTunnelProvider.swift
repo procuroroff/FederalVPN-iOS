@@ -17,10 +17,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
     
     // MARK: - Жизненный цикл туннеля
     
-    public override func startTunnel(
-        options: [String : NSObject]?,
-        completionHandler: @escaping (Error?) -> Void
-    ) {
+    open override func startTunnel(options: [String : NSObject]?) async throws {
         logExtension(">>> startTunnel initiated")
         tunnelStartTime = Date()
         lastErrorMessage = nil
@@ -45,76 +42,47 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
         logExtension("Starting native Sing-box (Libbox) core engine for \(config.serverAddress)...")
         let controller = TunnelController(provider: self)
         self.tunnelController = controller
-        Task {
-            do {
-                try await controller.start(with: config)
-                self.isTunnelActive = true
-                self.logExtension(">>> Sing-box Tunnel is LIVE, READY and ROUTING TRAFFIC")
-                completionHandler(nil)
-            } catch {
-                let msg = "Sing-box core startup failed: \(error.localizedDescription)"
-                self.logExtension("ERROR: \(msg)")
-                self.lastErrorMessage = msg
-                SharedDefaults.shared.lastTunnelError = msg
-                TunnelController.recordTrollStoreError(msg)
-                completionHandler(error)
-            }
+        do {
+            try await controller.start(with: config)
+            self.isTunnelActive = true
+            self.logExtension(">>> Sing-box Tunnel is LIVE, READY and ROUTING TRAFFIC")
+        } catch {
+            let msg = "Sing-box core startup failed: \(error.localizedDescription)"
+            self.logExtension("ERROR: \(msg)")
+            self.lastErrorMessage = msg
+            SharedDefaults.shared.lastTunnelError = msg
+            TunnelController.recordTrollStoreError(msg)
+            throw error
         }
         #else
-        // Fallback-режим
         let settings = createNetworkSettings(for: config)
         logExtension("Applying fallback NEPacketTunnelNetworkSettings...")
-        
-        setTunnelNetworkSettings(settings) { [weak self] error in
-            guard let self = self else { return }
-            
-            if let error = error {
-                let msg = "Failed to apply tunnel network settings: \(error.localizedDescription)"
-                self.logExtension("ERROR: \(msg)")
-                self.lastErrorMessage = msg
-                SharedDefaults.shared.lastTunnelError = msg
-                completionHandler(error)
-                return
-            }
-            
-            self.coreAdapter.start(configuration: config) { [weak self] coreError in
-                guard let self = self else { return }
-                
+        try await setTunnelNetworkSettings(settings)
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            self.coreAdapter.start(configuration: config) { coreError in
                 if let coreError = coreError {
-                    let msg = "Core startup failed: \(coreError.localizedDescription)"
-                    self.logExtension("ERROR: \(msg)")
-                    self.lastErrorMessage = msg
-                    SharedDefaults.shared.lastTunnelError = msg
-                    completionHandler(coreError)
-                    return
+                    cont.resume(throwing: coreError)
+                } else {
+                    cont.resume()
                 }
-                
-                self.isTunnelActive = true
-                self.logExtension(">>> Tunnel is READY and CONNECTED")
-                self.startPacketForwardingLoop()
-                completionHandler(nil)
             }
         }
+        self.isTunnelActive = true
+        self.logExtension(">>> Tunnel is READY and CONNECTED")
+        self.startPacketForwardingLoop()
         #endif
     }
     
-    public override func stopTunnel(
-        with reason: NEProviderStopReason,
-        completionHandler: @escaping () -> Void
-    ) {
+    open override func stopTunnel(with reason: NEProviderStopReason) async {
         logExtension("<<< stopTunnel called with reason: \(reason.rawValue)")
         isTunnelActive = false
         tunnelStartTime = nil
         
         #if canImport(Libbox)
-        Task {
-            await self.tunnelController?.stop()
-            self.tunnelController = nil
-            completionHandler()
-        }
+        await self.tunnelController?.stop()
+        self.tunnelController = nil
         #else
         coreAdapter.stop()
-        completionHandler()
         #endif
     }
     
@@ -276,6 +244,9 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider {
         let line = "[\(timestamp)] [PacketTunnel] \(message)"
         AppLogger.shared.info("[PacketTunnel] \(message)")
         SharedDefaults.shared.lastTunnelLog = line
+        #if canImport(Libbox)
+        TunnelController.appendTrollStoreLog(message)
+        #endif
     }
     
     private func startPacketForwardingLoop() {
