@@ -159,8 +159,7 @@ public struct ConnectionConfig: Codable, Equatable {
               {
                 "type": "udp",
                 "tag": "dns-direct",
-                "server": "1.1.1.1",
-                "detour": "direct"
+                "server": "1.1.1.1"
               }
             ],
             "rules": [
